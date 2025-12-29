@@ -7,6 +7,7 @@ import os
 import json
 import hashlib
 
+# --- သင့်ရဲ့ Referral Code ကို ဒီမှာ ထည့်ပါ ---
 REFERRAL_CODE = "dW_cD9ZELyYRY3yyhK2se3zhFtB-_CwogtCedcQm762kXfI1SyXhqOSocSY9qhOCMN2buA==" 
 
 class AllScale:
@@ -35,222 +36,149 @@ class AllScale:
                     print(f"✅ Loaded {len(proxies)} proxies from proxy.txt")
                     return proxies
         except Exception as e:
-            print(f"⚠️  Error loading proxies: {e}")
+            print(f"⚠️ Proxy file error: {e}")
         return []
     
     def get_next_proxy(self):
-        if not self.proxies:
-            return None
-        
+        if not self.proxies: return None
         proxy = self.proxies[self.current_proxy_index]
         self.current_proxy_index = (self.current_proxy_index + 1) % len(self.proxies)
-        
         if not proxy.startswith('http'):
             if proxy.count(':') >= 3:
                 parts = proxy.split(':')
                 proxy = f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
             else:
                 proxy = f"http://{proxy}"
-        
         return {'http': proxy, 'https': proxy}
         
     def generate_username(self):
-        consonants = 'bcdfghjklmnpqrstvwxyz'
-        vowels = 'aeiou'
+        consonants, vowels = 'bcdfghjklmnpqrstvwxyz', 'aeiou'
         length = random.randint(8, 12)
-        username = ''
-        for i in range(length):
-            if i % 2 == 0:
-                username += random.choice(consonants)
-            else:
-                username += random.choice(vowels)
-        return username.capitalize()
+        return ''.join(random.choice(consonants if i % 2 == 0 else vowels) for i in range(length)).capitalize()
         
     def generate_secret_key(self, timestamp: str):
-        secret_key = hashlib.sha256(f"vT*IUEGgyL{timestamp}".encode()).hexdigest()
-        return secret_key
+        return hashlib.sha256(f"vT*IUEGgyL{timestamp}".encode()).hexdigest()
     
     def get_mail_domain(self):
         try:
-            proxies = self.get_next_proxy()
-            response = requests.get(f"{self.mail_tm_base}/domains", proxies=proxies, timeout=30)
-            response.raise_for_status()
-            domains = response.json()['hydra:member']
-            return domains[0]['domain'] if domains else None
-        except Exception as e:
-            print(f"❌ Error getting domain: {e}")
-            return None
+            res = requests.get(f"{self.mail_tm_base}/domains", proxies=self.get_next_proxy(), timeout=30)
+            return res.json()['hydra:member'][0]['domain']
+        except: return None
     
     def create_temp_email(self, username: str, domain: str):
         try:
             email = f"{username.lower()}@{domain}"
-            password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-            proxies = self.get_next_proxy()
-            response = requests.post(
-                f"{self.mail_tm_base}/accounts",
-                json={"address": email, "password": password},
-                proxies=proxies,
-                timeout=30
-            )
-            response.raise_for_status()
-            data = response.json()
-            return {"email": data['address'], "password": password, "id": data['id']}
-        except Exception as e:
-            print(f"❌ Error creating email: {e}")
-            return None
+            pwd = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+            res = requests.post(f"{self.mail_tm_base}/accounts", json={"address": email, "password": pwd}, proxies=self.get_next_proxy(), timeout=30)
+            data = res.json()
+            return {"email": data['address'], "password": pwd, "id": data['id']}
+        except: return None
     
     def get_auth_token(self, email: str, password: str):
         try:
-            proxies = self.get_next_proxy()
-            response = requests.post(
-                f"{self.mail_tm_base}/token",
-                json={"address": email, "password": password},
-                proxies=proxies,
-                timeout=30
-            )
-            response.raise_for_status()
-            return response.json()['token']
-        except Exception as e:
-            print(f"❌ Error getting token: {e}")
-            return None
+            res = requests.post(f"{self.mail_tm_base}/token", json={"address": email, "password": password}, proxies=self.get_next_proxy(), timeout=30)
+            return res.json()['token']
+        except: return None
     
     def extract_otp_code(self, content: str):
-        if not content: return None
         match = re.search(r'\b(\d{6})\b', content)
         return match.group(1) if match else None
     
     def wait_for_verification_email(self, token: str, max_attempts: int = 30):
-        print("⏳ Wait for email verification...")
-        for attempt in range(max_attempts):
+        print("⏳ Waiting for OTP email...")
+        for _ in range(max_attempts):
             try:
                 proxies = self.get_next_proxy()
-                response = requests.get(
-                    f"{self.mail_tm_base}/messages",
-                    headers={"Authorization": f"Bearer {token}"},
-                    proxies=proxies,
-                    timeout=30
-                )
-                if response.ok:
-                    messages = response.json()['hydra:member']
+                res = requests.get(f"{self.mail_tm_base}/messages", headers={"Authorization": f"Bearer {token}"}, proxies=proxies, timeout=30)
+                if res.ok:
+                    messages = res.json()['hydra:member']
                     for msg in messages:
-                        if msg['from']['address'] == 'no-reply@mail.turnkey.com':
-                            msg_response = requests.get(
-                                f"{self.mail_tm_base}/messages/{msg['id']}",
-                                headers={"Authorization": f"Bearer {token}"},
-                                proxies=proxies,
-                                timeout=30
-                            )
-                            if msg_response.ok:
-                                msg_data = msg_response.json()
-                                html_content = msg_data.get('html', [msg_data.get('text', [''])])[0]
-                                otp_code = self.extract_otp_code(html_content)
-                                if otp_code: return otp_code
+                        if 'turnkey' in msg['from']['address']:
+                            msg_res = requests.get(f"{self.mail_tm_base}/messages/{msg['id']}", headers={"Authorization": f"Bearer {token}"}, proxies=proxies, timeout=30)
+                            if msg_res.ok:
+                                otp = self.extract_otp_code(msg_res.json().get('html', [''])[0])
+                                if otp: return otp
                 time.sleep(3)
-                print(f"   Attempt {attempt + 1}/{max_attempts}...")
-            except Exception as e:
-                print(f"❌ Error checking inbox: {e}")
-                time.sleep(3)
+            except: time.sleep(3)
         return None
     
-    def send_email_otp(self, email: str):
-        try:
-            data = json.dumps({"email": email, "check_user_existence": False})
-            headers = self.allscale_headers.copy()
-            timestamp = str(int(time.time()))
-            headers.update({
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "Secret-Key": self.generate_secret_key(timestamp),
-                "Timestamp": timestamp
-            })
-            proxies = self.get_next_proxy()
-            response = requests.post(f"{self.allscale_base}/api/public/turnkey/send_email_otp", data=data, headers=headers, proxies=proxies, timeout=30)
-            res_data = response.json()
-            return {"success": True, "data": res_data} if response.ok and res_data.get('code') == 0 else {"success": False, "error": res_data}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-        
     def email_otp_auth(self, email: str, otp_id: str, otp_code: str):
-        try:
-            data = json.dumps({"email": email, "otp_id": otp_id, "otp_code": otp_code, "referer_id": REFERRAL_CODE})
+        # --- အရေးကြီးသော Retry System (Pending Error အတွက်) ---
+        for i in range(6): # စုစုပေါင်း ၆ ကြိမ်အထိ စမ်းမည်
+            try:
+                data = json.dumps({"email": email, "otp_id": otp_id, "otp_code": otp_code, "referer_id": REFERRAL_CODE})
+                ts = str(int(time.time()))
+                headers = self.allscale_headers.copy()
+                headers.update({"Content-Type": "application/json", "Secret-Key": self.generate_secret_key(ts), "Timestamp": ts})
+                
+                res = requests.post(f"{self.allscale_base}/api/public/turnkey/email_otp_auth", data=data, headers=headers, proxies=self.get_next_proxy(), timeout=30)
+                res_data = res.json()
+                
+                if res.ok and res_data.get('code') == 0:
+                    return {"success": True, "data": res_data}
+                
+                # Server က မအားသေးရင် (Pending) ၁၀ စက္ကန့် စောင့်ပြီး ထပ်စမ်းမယ်
+                if "ACTIVITY_STATUS_PENDING" in str(res_data):
+                    print(f"⚠️ System is still processing (Attempt {i+1}/6). Waiting 10s...")
+                    time.sleep(10)
+                else:
+                    return {"success": False, "error": res_data}
+            except Exception as e:
+                time.sleep(5)
+        return {"success": False, "error": "Timeout after multiple retries"}
+
+    def run(self, total: int):
+        success = 0
+        for i in range(total):
+            print(f"\n🚀 Creating Account {i+1}/{total}")
+            username = self.generate_username()
+            domain = self.get_mail_domain()
+            if not domain: continue
+            
+            email_info = self.create_temp_email(username, domain)
+            if not email_info: 
+                print("❌ Email creation failed (Rate Limit?). Waiting 60s...")
+                time.sleep(60)
+                continue
+                
+            token = self.get_auth_token(email_info['email'], email_info['password'])
+            
+            # Send OTP Request
+            ts = str(int(time.time()))
             headers = self.allscale_headers.copy()
-            timestamp = str(int(time.time()))
-            headers.update({
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "Secret-Key": self.generate_secret_key(timestamp),
-                "Timestamp": timestamp
-            })
-            proxies = self.get_next_proxy()
-            response = requests.post(f"{self.allscale_base}/api/public/turnkey/email_otp_auth", data=data, headers=headers, proxies=proxies, timeout=30)
-            res_data = response.json()
-            return {"success": True, "data": res_data} if response.ok and res_data.get('code') == 0 else {"success": False, "error": res_data}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def create_account(self):
-        print("\n" + "="*60)
-        username = self.generate_username()
-        print(f"👤 Username: {username}")
-        domain = self.get_mail_domain()
-        if not domain: return {"success": False, "error": "Failed to get mail domain"}
-        email_data = self.create_temp_email(username, domain)
-        if not email_data: return {"success": False, "error": "Failed to create email"}
-        email = email_data['email']
-        print(f"📧 Email   : {email}")
-        mail_token = self.get_auth_token(email, email_data['password'])
-        if not mail_token: return {"success": False, "error": "Failed to get mail token"}
-        print("📝 Request OTP...")
-        send_result = self.send_email_otp(email)
-        if not send_result['success']:
-            print(f"❌ Request OTP failed: {send_result.get('error', 'Unknown error')}")
-            return send_result
-        otp_id = send_result['data']['data']
-        print(f"✅ Request OTP successful! \n   OTP ID: {otp_id}")
-        otp_code = self.wait_for_verification_email(mail_token)
-        if not otp_code:
-            print("❌ OTP Code not received")
-            return {"success": False, "error": "Verification email timeout"}
-        print(f"🔑 OTP Code: {otp_code}")
+            headers.update({"Content-Type": "application/json", "Secret-Key": self.generate_secret_key(ts), "Timestamp": ts})
+            otp_req = requests.post(f"{self.allscale_base}/api/public/turnkey/send_email_otp", 
+                                  json={"email": email_info['email'], "check_user_existence": False}, 
+                                  headers=headers, proxies=self.get_next_proxy())
+            
+            if not otp_req.ok:
+                print("❌ OTP Request Failed")
+                continue
+                
+            otp_id = otp_req.json().get('data')
+            otp_code = self.wait_for_verification_email(token)
+            
+            if otp_code:
+                print(f"🔑 OTP Code: {otp_code}")
+                print("⏳ Waiting 15s for Server stability...")
+                time.sleep(15) # Verify မလုပ်ခင် အရင်ဆုံး ၁၅ စက္ကန့် စောင့်မယ်
+                
+                result = self.email_otp_auth(email_info['email'], otp_id, otp_code)
+                if result.get('success'):
+                    success += 1
+                    print("✅ Account Success!")
+                else:
+                    print(f"❌ Failed: {result.get('error')}")
+            
+            # Rate Limit မဖြစ်အောင် အကောင့်တစ်ခုပြီးတိုင်း ၆၀ စက္ကန့် စောင့်မယ်
+            if i < total - 1:
+                print("⏳ Cooling down for 60s to avoid IP Block...")
+                time.sleep(60)
         
-        # --- ပြင်ဆင်ထားသောနေရာ (Pending Error အတွက် ၅ စက္ကန့် စောင့်ခြင်း) ---
-        print("⏳ Waiting 10 seconds for Turnkey to process activity...")
-        time.sleep(10) 
-        
-        print("✉️  Verifying OTP...")
-        auth_result = self.email_otp_auth(email, otp_id, otp_code)
-        if not auth_result['success']:
-            print(f"❌ OTP verification failed: {auth_result.get('error', 'Unknown error')}")
-            return auth_result
-        print(f"✅ OTP verified successfully \n✅ Done!")
-        return {"success": True, "username": username, "email": email, "verified": True}
-    
-    def run(self, total_accounts: int = 1, delay_between: int = 60):
-        print(f"🎯 Referral Code: {REFERRAL_CODE}")
-        print(f"🔢 Total Accounts: {total_accounts}")
-        print(f"⏱️  Delay Between: {delay_between}s")
-        success_count, failed_count = 0, 0
-        for i in range(total_accounts):
-            print(f"\n🚀 Creating account {i + 1}/{total_accounts}...")
-            result = self.create_account()
-            if result['success']: success_count += 1
-            else: failed_count += 1
-            if i < total_accounts - 1:
-                print(f"\n⏳ Waiting {delay_between} seconds before next account to avoid Rate Limit...")
-                time.sleep(delay_between)
-        print("\n" + "="*60 + f"\nSuccess: {success_count} | Failed: {failed_count} | Total: {total_accounts}")
+        print(f"\n✨ Done! Total Success: {success}/{total}")
 
 if __name__ == "__main__":
-    print("\n╔══════════════════════════════════════════════════════════╗")
-    print("║          AUTO REFERRAL AllScale Pay - FIXED              ║")
-    print("╚══════════════════════════════════════════════════════════╝\n")
     try:
-        TOTAL_ACCOUNTS = int(input("🔢 Number of accounts you want to create: ").strip())
-        if TOTAL_ACCOUNTS < 1: exit(1)
-    except ValueError: exit(1)
-    
-    # Delay ကို 60 လို့ ပုံသေထားပေးလိုက်ပါတယ် (429 Error ကာကွယ်ရန်)
-    DELAY_BETWEEN = 60 
-    bot = AllScale()
-    bot.run(total_accounts=TOTAL_ACCOUNTS, delay_between=DELAY_BETWEEN)
-
+        num = int(input("🔢 How many accounts?: "))
+        AllScale().run(num)
+    except KeyboardInterrupt: exit()
