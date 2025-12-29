@@ -7,7 +7,7 @@ import os
 import json
 import hashlib
 
-REFERRAL_CODE = "dW_cD9ZELyYRY3yyhK2se3zhFtB-_CwogtCedcQm762kXfI1SyXhqOSocSY9qhOCMN2buA==" # Change it with yours.
+REFERRAL_CODE = "dW_cD9ZELyYRY3yyhK2se3zhFtB-_CwogtCedcQm762kXfI1SyXhqOSocSY9qhOCMN2buA==" 
 
 class AllScale:
     def __init__(self):
@@ -52,39 +52,28 @@ class AllScale:
             else:
                 proxy = f"http://{proxy}"
         
-        return {
-            'http': proxy,
-            'https': proxy
-        }
+        return {'http': proxy, 'https': proxy}
         
     def generate_username(self):
         consonants = 'bcdfghjklmnpqrstvwxyz'
         vowels = 'aeiou'
         length = random.randint(8, 12)
-        
         username = ''
         for i in range(length):
             if i % 2 == 0:
                 username += random.choice(consonants)
             else:
                 username += random.choice(vowels)
-        
         return username.capitalize()
         
     def generate_secret_key(self, timestamp: str):
-        secret_key = hashlib.sha256(
-            f"vT*IUEGgyL{timestamp}".encode()
-        ).hexdigest()
+        secret_key = hashlib.sha256(f"vT*IUEGgyL{timestamp}".encode()).hexdigest()
         return secret_key
     
     def get_mail_domain(self):
         try:
             proxies = self.get_next_proxy()
-            response = requests.get(
-                f"{self.mail_tm_base}/domains",
-                proxies=proxies,
-                timeout=30
-            )
+            response = requests.get(f"{self.mail_tm_base}/domains", proxies=proxies, timeout=30)
             response.raise_for_status()
             domains = response.json()['hydra:member']
             return domains[0]['domain'] if domains else None
@@ -96,25 +85,16 @@ class AllScale:
         try:
             email = f"{username.lower()}@{domain}"
             password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-            
             proxies = self.get_next_proxy()
             response = requests.post(
                 f"{self.mail_tm_base}/accounts",
-                json={
-                    "address": email,
-                    "password": password
-                },
+                json={"address": email, "password": password},
                 proxies=proxies,
                 timeout=30
             )
             response.raise_for_status()
-            
             data = response.json()
-            return {
-                "email": data['address'],
-                "password": password,
-                "id": data['id']
-            }
+            return {"email": data['address'], "password": password, "id": data['id']}
         except Exception as e:
             print(f"❌ Error creating email: {e}")
             return None
@@ -124,10 +104,7 @@ class AllScale:
             proxies = self.get_next_proxy()
             response = requests.post(
                 f"{self.mail_tm_base}/token",
-                json={
-                    "address": email,
-                    "password": password
-                },
+                json={"address": email, "password": password},
                 proxies=proxies,
                 timeout=30
             )
@@ -138,18 +115,12 @@ class AllScale:
             return None
     
     def extract_otp_code(self, content: str):
-        if not content:
-            return None
-
+        if not content: return None
         match = re.search(r'\b(\d{6})\b', content)
-        if match:
-            return match.group(1)
-
-        return None
+        return match.group(1) if match else None
     
     def wait_for_verification_email(self, token: str, max_attempts: int = 30):
         print("⏳ Wait for email verification...")
-        
         for attempt in range(max_attempts):
             try:
                 proxies = self.get_next_proxy()
@@ -159,10 +130,8 @@ class AllScale:
                     proxies=proxies,
                     timeout=30
                 )
-                
                 if response.ok:
                     messages = response.json()['hydra:member']
-                    
                     for msg in messages:
                         if msg['from']['address'] == 'no-reply@mail.turnkey.com':
                             msg_response = requests.get(
@@ -171,208 +140,116 @@ class AllScale:
                                 proxies=proxies,
                                 timeout=30
                             )
-                            
                             if msg_response.ok:
                                 msg_data = msg_response.json()
                                 html_content = msg_data.get('html', [msg_data.get('text', [''])])[0]
-
                                 otp_code = self.extract_otp_code(html_content)
-                                if otp_code:
-                                    return otp_code
-                
+                                if otp_code: return otp_code
                 time.sleep(3)
                 print(f"   Attempt {attempt + 1}/{max_attempts}...")
-                
             except Exception as e:
                 print(f"❌ Error checking inbox: {e}")
                 time.sleep(3)
-        
         return None
     
     def send_email_otp(self, email: str):
         try:
-            data = json.dumps({
-                "email": email,
-                "check_user_existence": False
-            })
-
+            data = json.dumps({"email": email, "check_user_existence": False})
             headers = self.allscale_headers.copy()
-
-            timestmap = str(int(time.time()))
-            secret_key = self.generate_secret_key(timestmap)
-
-            headers["Content-Length"] = str(len(data))
-            headers["Content-Type"] = "application/json"
-            headers["Secret-Key"] = secret_key
-            headers["Timestamp"] = timestmap
-            
+            timestamp = str(int(time.time()))
+            headers.update({
+                "Content-Length": str(len(data)),
+                "Content-Type": "application/json",
+                "Secret-Key": self.generate_secret_key(timestamp),
+                "Timestamp": timestamp
+            })
             proxies = self.get_next_proxy()
-            response = requests.post(
-                f"{self.allscale_base}/api/public/turnkey/send_email_otp",
-                data=data,
-                headers=headers,
-                proxies=proxies,
-                timeout=30
-            )
-            
-            data = response.json()
-            
-            if response.ok and data.get('code') == 0:
-                return {"success": True, "data": data}
-            else:
-                return {"success": False, "error": data}
+            response = requests.post(f"{self.allscale_base}/api/public/turnkey/send_email_otp", data=data, headers=headers, proxies=proxies, timeout=30)
+            res_data = response.json()
+            return {"success": True, "data": res_data} if response.ok and res_data.get('code') == 0 else {"success": False, "error": res_data}
         except Exception as e:
             return {"success": False, "error": str(e)}
         
     def email_otp_auth(self, email: str, otp_id: str, otp_code: str):
         try:
-            data = json.dumps({
-                "email": email,
-                "otp_id": otp_id,
-                "otp_code": otp_code,
-                "referer_id": REFERRAL_CODE
-            })
-
+            data = json.dumps({"email": email, "otp_id": otp_id, "otp_code": otp_code, "referer_id": REFERRAL_CODE})
             headers = self.allscale_headers.copy()
-
-            timestmap = str(int(time.time()))
-            secret_key = self.generate_secret_key(timestmap)
-
-            headers["Content-Length"] = str(len(data))
-            headers["Content-Type"] = "application/json"
-            headers["Secret-Key"] = secret_key
-            headers["Timestamp"] = timestmap
-            
+            timestamp = str(int(time.time()))
+            headers.update({
+                "Content-Length": str(len(data)),
+                "Content-Type": "application/json",
+                "Secret-Key": self.generate_secret_key(timestamp),
+                "Timestamp": timestamp
+            })
             proxies = self.get_next_proxy()
-            response = requests.post(
-                f"{self.allscale_base}/api/public/turnkey/email_otp_auth",
-                data=data,
-                headers=headers,
-                proxies=proxies,
-                timeout=30
-            )
-            
-            data = response.json()
-            
-            if response.ok and data.get('code') == 0:
-                return {"success": True, "data": data}
-            else:
-                return {"success": False, "error": data}
+            response = requests.post(f"{self.allscale_base}/api/public/turnkey/email_otp_auth", data=data, headers=headers, proxies=proxies, timeout=30)
+            res_data = response.json()
+            return {"success": True, "data": res_data} if response.ok and res_data.get('code') == 0 else {"success": False, "error": res_data}
         except Exception as e:
             return {"success": False, "error": str(e)}
     
     def create_account(self):
         print("\n" + "="*60)
-        
         username = self.generate_username()
         print(f"👤 Username: {username}")
-        
         domain = self.get_mail_domain()
-        if not domain:
-            return {"success": False, "error": "Failed to get mail domain"}
-        
+        if not domain: return {"success": False, "error": "Failed to get mail domain"}
         email_data = self.create_temp_email(username, domain)
-        if not email_data:
-            return {"success": False, "error": "Failed to create email"}
-        
+        if not email_data: return {"success": False, "error": "Failed to create email"}
         email = email_data['email']
         print(f"📧 Email   : {email}")
-        
         mail_token = self.get_auth_token(email, email_data['password'])
-        if not mail_token:
-            return {"success": False, "error": "Failed to get mail token"}
-        
+        if not mail_token: return {"success": False, "error": "Failed to get mail token"}
         print("📝 Request OTP...")
         send_result = self.send_email_otp(email)
-        
         if not send_result['success']:
             print(f"❌ Request OTP failed: {send_result.get('error', 'Unknown error')}")
             return send_result
-        
         otp_id = send_result['data']['data']
-
-        print(f"✅ Request OTP successful!")
-        print(f"   OTP ID: {otp_id}")
-        
+        print(f"✅ Request OTP successful! \n   OTP ID: {otp_id}")
         otp_code = self.wait_for_verification_email(mail_token)
-        
         if not otp_code:
             print("❌ OTP Code not received")
             return {"success": False, "error": "Verification email timeout"}
-        
         print(f"🔑 OTP Code: {otp_code}")
+        
+        # --- ပြင်ဆင်ထားသောနေရာ (Pending Error အတွက် ၅ စက္ကန့် စောင့်ခြင်း) ---
+        print("⏳ Waiting 5 seconds for Turnkey to process activity...")
+        time.sleep(5) 
         
         print("✉️  Verifying OTP...")
         auth_result = self.email_otp_auth(email, otp_id, otp_code)
-        
         if not auth_result['success']:
             print(f"❌ OTP verification failed: {auth_result.get('error', 'Unknown error')}")
             return auth_result
-        
-        print(f"✅ OTP verified successfully")
-        print(f"✅ Done!")
-        
-        return {
-            "success": True,
-            "username": username,
-            "email": email,
-            "verified": True
-        }
+        print(f"✅ OTP verified successfully \n✅ Done!")
+        return {"success": True, "username": username, "email": email, "verified": True}
     
-    def run(self, total_accounts: int = 1, delay_between: int = 5):
+    def run(self, total_accounts: int = 1, delay_between: int = 60):
         print(f"🎯 Referral Code: {REFERRAL_CODE}")
         print(f"🔢 Total Accounts: {total_accounts}")
         print(f"⏱️  Delay Between: {delay_between}s")
-        
-        success_count = 0
-        failed_count = 0
-        
+        success_count, failed_count = 0, 0
         for i in range(total_accounts):
             print(f"\n🚀 Creating account {i + 1}/{total_accounts}...")
-            
             result = self.create_account()
-            
-            if result['success']:
-                success_count += 1
-                print(f"✅ Account {i + 1} created successfully!")
-            else:
-                failed_count += 1
-                print(f"❌ Account {i + 1} failed: {result.get('error', 'Unknown error')}")
-            
+            if result['success']: success_count += 1
+            else: failed_count += 1
             if i < total_accounts - 1:
-                print(f"\n⏳ Waiting {delay_between} seconds before next account...")
+                print(f"\n⏳ Waiting {delay_between} seconds before next account to avoid Rate Limit...")
                 time.sleep(delay_between)
-        
-        print("\n" + "="*60)
-        print(f"""
-╔══════════════════════════════════════════════════════════╗
-║                    SUMMARY                               ║
-╠══════════════════════════════════════════════════════════╣
-║  ✅ Success: {success_count:<2}                                        ║
-║  ❌ Failed:  {failed_count:<2}                                        ║
-║  📊 Total:   {total_accounts:<2}                                        ║
-╚══════════════════════════════════════════════════════════╝
-        """)
-
+        print("\n" + "="*60 + f"\nSuccess: {success_count} | Failed: {failed_count} | Total: {total_accounts}")
 
 if __name__ == "__main__":
-    print("""
-╔══════════════════════════════════════════════════════════╗
-║          AUTO REFERRAL AllScale Pay - VONSSY              ║
-╚══════════════════════════════════════════════════════════╝
-    """)
-    
+    print("\n╔══════════════════════════════════════════════════════════╗")
+    print("║          AUTO REFERRAL AllScale Pay - FIXED              ║")
+    print("╚══════════════════════════════════════════════════════════╝\n")
     try:
         TOTAL_ACCOUNTS = int(input("🔢 Number of accounts you want to create: ").strip())
-        if TOTAL_ACCOUNTS < 1:
-            print("❌ Minimum number of accounts is 1!")
-            exit(1)
-    except ValueError:
-        print("❌ Enter a valid number!")
-        exit(1)
+        if TOTAL_ACCOUNTS < 1: exit(1)
+    except ValueError: exit(1)
     
-    DELAY_BETWEEN = 5
-    
+    # Delay ကို 60 လို့ ပုံသေထားပေးလိုက်ပါတယ် (429 Error ကာကွယ်ရန်)
+    DELAY_BETWEEN = 60 
     bot = AllScale()
-
     bot.run(total_accounts=TOTAL_ACCOUNTS, delay_between=DELAY_BETWEEN)
