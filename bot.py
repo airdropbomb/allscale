@@ -7,7 +7,7 @@ import os
 import json
 import hashlib
 
-REFERRAL_CODE = "a-swwQbSh0LFBQweYQMKDYKcIxy_H4f9sGEQb4MFcnHYhUcEQz6iG2VO2G_1QIpr1KDkWA==" # Change it with yours.
+REFERRAL_CODE = "dW_cD9ZELyYRY3yyhK2se3zhFtB-_CwogtCedcQm762kXfI1SyXhqOSocSY9qhOCMN2buA==" # Change it with yours.
 
 class AllScale:
     def __init__(self):
@@ -374,4 +374,5 @@ if __name__ == "__main__":
     DELAY_BETWEEN = 5
     
     bot = AllScale()
+
     bot.run(total_accounts=TOTAL_ACCOUNTS, delay_between=DELAY_BETWEEN)
