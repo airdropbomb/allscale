@@ -214,8 +214,8 @@ class AllScale:
         print(f"🔑 OTP Code: {otp_code}")
         
         # --- ပြင်ဆင်ထားသောနေရာ (Pending Error အတွက် ၅ စက္ကန့် စောင့်ခြင်း) ---
-        print("⏳ Waiting 5 seconds for Turnkey to process activity...")
-        time.sleep(5) 
+        print("⏳ Waiting 10 seconds for Turnkey to process activity...")
+        time.sleep(10) 
         
         print("✉️  Verifying OTP...")
         auth_result = self.email_otp_auth(email, otp_id, otp_code)
@@ -253,3 +253,4 @@ if __name__ == "__main__":
     DELAY_BETWEEN = 60 
     bot = AllScale()
     bot.run(total_accounts=TOTAL_ACCOUNTS, delay_between=DELAY_BETWEEN)
+
